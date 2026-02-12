@@ -1178,6 +1178,129 @@ var ChargilyService = class {
     }
   }
   /**
+   * Create payment link
+   */
+  async createPaymentLink(data, context) {
+    const startTime = Date.now();
+    try {
+      const paymentLink = await this.client.createPaymentLink(data);
+      await this.logAudit({
+        ...context,
+        action: "create_payment_link",
+        resource: "payment_link",
+        resourceId: paymentLink.id,
+        input: data,
+        output: paymentLink,
+        success: true,
+        duration: Date.now() - startTime
+      });
+      return paymentLink;
+    } catch (error) {
+      await this.logAudit({
+        ...context,
+        action: "create_payment_link",
+        resource: "payment_link",
+        input: data,
+        success: false,
+        error: error.message,
+        duration: Date.now() - startTime
+      });
+      throw error;
+    }
+  }
+  /**
+   * Get payment link
+   */
+  async getPaymentLink(id, context) {
+    const startTime = Date.now();
+    try {
+      const paymentLink = await this.client.getPaymentLink(id);
+      await this.logAudit({
+        ...context,
+        action: "get_payment_link",
+        resource: "payment_link",
+        resourceId: id,
+        output: paymentLink,
+        success: true,
+        duration: Date.now() - startTime
+      });
+      return paymentLink;
+    } catch (error) {
+      await this.logAudit({
+        ...context,
+        action: "get_payment_link",
+        resource: "payment_link",
+        resourceId: id,
+        success: false,
+        error: error.message,
+        duration: Date.now() - startTime
+      });
+      throw error;
+    }
+  }
+  /**
+   * List payment links
+   */
+  async listPaymentLinks(params, context) {
+    const startTime = Date.now();
+    try {
+      const paymentLinks = await this.client.listPaymentLinks(params);
+      await this.logAudit({
+        ...context,
+        action: "list_payment_links",
+        resource: "payment_link",
+        input: params,
+        output: { count: paymentLinks.data?.length || 0 },
+        success: true,
+        duration: Date.now() - startTime
+      });
+      return paymentLinks;
+    } catch (error) {
+      await this.logAudit({
+        ...context,
+        action: "list_payment_links",
+        resource: "payment_link",
+        input: params,
+        success: false,
+        error: error.message,
+        duration: Date.now() - startTime
+      });
+      throw error;
+    }
+  }
+  /**
+   * Update payment link
+   */
+  async updatePaymentLink(id, data, context) {
+    const startTime = Date.now();
+    try {
+      const paymentLink = await this.client.updatePaymentLink(id, data);
+      await this.logAudit({
+        ...context,
+        action: "update_payment_link",
+        resource: "payment_link",
+        resourceId: id,
+        input: data,
+        output: paymentLink,
+        success: true,
+        duration: Date.now() - startTime
+      });
+      return paymentLink;
+    } catch (error) {
+      await this.logAudit({
+        ...context,
+        action: "update_payment_link",
+        resource: "payment_link",
+        resourceId: id,
+        input: data,
+        success: false,
+        error: error.message,
+        duration: Date.now() - startTime
+      });
+      throw error;
+    }
+  }
+  /**
    * Log audit trail
    */
   async logAudit(params) {
@@ -1356,6 +1479,49 @@ router2.post("/checkouts/:id/expire", async (req, res, next) => {
   try {
     const checkout = await chargilyService.expireCheckout(req.params.id, getContext(req));
     res.json(checkout);
+  } catch (error) {
+    next(error);
+  }
+});
+router2.post("/payment-links", async (req, res, next) => {
+  try {
+    const paymentLink = await chargilyService.createPaymentLink(req.body, getContext(req));
+    res.status(201).json(paymentLink);
+  } catch (error) {
+    next(error);
+  }
+});
+router2.get("/payment-links/:id", async (req, res, next) => {
+  try {
+    const paymentLink = await chargilyService.getPaymentLink(req.params.id, getContext(req));
+    res.json(paymentLink);
+  } catch (error) {
+    next(error);
+  }
+});
+router2.get("/payment-links", async (req, res, next) => {
+  try {
+    const paymentLinks = await chargilyService.listPaymentLinks(
+      {
+        page: Number(req.query.page) || 1,
+        per_page: Number(req.query.per_page) || 20,
+        active: req.query.active === "true" ? true : req.query.active === "false" ? false : void 0
+      },
+      getContext(req)
+    );
+    res.json(paymentLinks);
+  } catch (error) {
+    next(error);
+  }
+});
+router2.patch("/payment-links/:id", async (req, res, next) => {
+  try {
+    const paymentLink = await chargilyService.updatePaymentLink(
+      req.params.id,
+      req.body,
+      getContext(req)
+    );
+    res.json(paymentLink);
   } catch (error) {
     next(error);
   }

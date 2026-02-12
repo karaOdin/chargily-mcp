@@ -211,4 +211,55 @@ router.post('/checkouts/:id/expire', async (req, res, next) => {
   }
 });
 
+// ============================================================================
+// PAYMENT LINKS (V2)
+// ============================================================================
+
+router.post('/payment-links', async (req, res, next) => {
+  try {
+    const paymentLink = await chargilyService.createPaymentLink(req.body, getContext(req));
+    res.status(201).json(paymentLink);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/payment-links/:id', async (req, res, next) => {
+  try {
+    const paymentLink = await chargilyService.getPaymentLink(req.params.id, getContext(req));
+    res.json(paymentLink);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/payment-links', async (req, res, next) => {
+  try {
+    const paymentLinks = await chargilyService.listPaymentLinks(
+      {
+        page: Number(req.query.page) || 1,
+        per_page: Number(req.query.per_page) || 20,
+        active: req.query.active === 'true' ? true : req.query.active === 'false' ? false : undefined,
+      },
+      getContext(req)
+    );
+    res.json(paymentLinks);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/payment-links/:id', async (req, res, next) => {
+  try {
+    const paymentLink = await chargilyService.updatePaymentLink(
+      req.params.id,
+      req.body,
+      getContext(req)
+    );
+    res.json(paymentLink);
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

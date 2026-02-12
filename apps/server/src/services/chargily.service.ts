@@ -656,6 +656,174 @@ export class ChargilyService {
   }
 
   /**
+   * Create payment link
+   */
+  async createPaymentLink(
+    data: {
+      name: string;
+      items: Array<{ price_id: string; quantity: number }>;
+      collect_shipping_address?: boolean;
+      locale?: string;
+      pass_fees_to_customer?: boolean;
+      metadata?: any;
+    },
+    context: { userId: string; tenantId?: string; ipAddress?: string }
+  ) {
+    const startTime = Date.now();
+
+    try {
+      const paymentLink = await this.client.createPaymentLink(data);
+
+      await this.logAudit({
+        ...context,
+        action: 'create_payment_link',
+        resource: 'payment_link',
+        resourceId: paymentLink.id,
+        input: data,
+        output: paymentLink,
+        success: true,
+        duration: Date.now() - startTime,
+      });
+
+      return paymentLink;
+    } catch (error) {
+      await this.logAudit({
+        ...context,
+        action: 'create_payment_link',
+        resource: 'payment_link',
+        input: data,
+        success: false,
+        error: (error as Error).message,
+        duration: Date.now() - startTime,
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Get payment link
+   */
+  async getPaymentLink(
+    id: string,
+    context: { userId: string; tenantId?: string; ipAddress?: string }
+  ) {
+    const startTime = Date.now();
+
+    try {
+      const paymentLink = await this.client.getPaymentLink(id);
+
+      await this.logAudit({
+        ...context,
+        action: 'get_payment_link',
+        resource: 'payment_link',
+        resourceId: id,
+        output: paymentLink,
+        success: true,
+        duration: Date.now() - startTime,
+      });
+
+      return paymentLink;
+    } catch (error) {
+      await this.logAudit({
+        ...context,
+        action: 'get_payment_link',
+        resource: 'payment_link',
+        resourceId: id,
+        success: false,
+        error: (error as Error).message,
+        duration: Date.now() - startTime,
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * List payment links
+   */
+  async listPaymentLinks(
+    params: { page?: number; per_page?: number; active?: boolean },
+    context: { userId: string; tenantId?: string; ipAddress?: string }
+  ) {
+    const startTime = Date.now();
+
+    try {
+      const paymentLinks = await this.client.listPaymentLinks(params);
+
+      await this.logAudit({
+        ...context,
+        action: 'list_payment_links',
+        resource: 'payment_link',
+        input: params,
+        output: { count: paymentLinks.data?.length || 0 },
+        success: true,
+        duration: Date.now() - startTime,
+      });
+
+      return paymentLinks;
+    } catch (error) {
+      await this.logAudit({
+        ...context,
+        action: 'list_payment_links',
+        resource: 'payment_link',
+        input: params,
+        success: false,
+        error: (error as Error).message,
+        duration: Date.now() - startTime,
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Update payment link
+   */
+  async updatePaymentLink(
+    id: string,
+    data: {
+      name?: string;
+      active?: boolean;
+      collect_shipping_address?: boolean;
+      metadata?: any;
+    },
+    context: { userId: string; tenantId?: string; ipAddress?: string }
+  ) {
+    const startTime = Date.now();
+
+    try {
+      const paymentLink = await this.client.updatePaymentLink(id, data);
+
+      await this.logAudit({
+        ...context,
+        action: 'update_payment_link',
+        resource: 'payment_link',
+        resourceId: id,
+        input: data,
+        output: paymentLink,
+        success: true,
+        duration: Date.now() - startTime,
+      });
+
+      return paymentLink;
+    } catch (error) {
+      await this.logAudit({
+        ...context,
+        action: 'update_payment_link',
+        resource: 'payment_link',
+        resourceId: id,
+        input: data,
+        success: false,
+        error: (error as Error).message,
+        duration: Date.now() - startTime,
+      });
+
+      throw error;
+    }
+  }
+
+  /**
    * Log audit trail
    */
   private async logAudit(params: {

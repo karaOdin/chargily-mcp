@@ -61,7 +61,13 @@ Authorization: Bearer YOUR_API_KEY ✅
 - `GET /checkouts` - List checkouts
 - `POST /checkouts/:id/expire` - Expire checkout
 
-**Total: 25 V2 API endpoints implemented!** ✅
+### **✅ Payment Links API** (4 endpoints) - **V2 FEATURE!**
+- `POST /payment-links` - Create payment link
+- `GET /payment-links/:id` - Get payment link
+- `GET /payment-links` - List payment links (with active filter)
+- `PATCH /payment-links/:id` - Update payment link
+
+**Total: 29 V2 API endpoints implemented!** ✅
 
 ---
 
@@ -104,6 +110,14 @@ POST   /api/v1/chargily/checkouts
 GET    /api/v1/chargily/checkouts
 GET    /api/v1/chargily/checkouts/:id
 POST   /api/v1/chargily/checkouts/:id/expire
+```
+
+### **Payment Links (V2!):**
+```bash
+POST   /api/v1/chargily/payment-links
+GET    /api/v1/chargily/payment-links
+GET    /api/v1/chargily/payment-links/:id
+PATCH  /api/v1/chargily/payment-links/:id
 ```
 
 ---
@@ -163,6 +177,26 @@ curl -X POST \
   http://localhost:3000/api/v1/chargily/checkouts
 ```
 
+### **6. Create Payment Link (V2 feature!):**
+```bash
+curl -X POST \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Monthly Subscription",
+    "items": [{"price_id": "price_xxxxx", "quantity": 1}],
+    "locale": "ar",
+    "pass_fees_to_customer": true
+  }' \
+  http://localhost:3000/api/v1/chargily/payment-links
+```
+
+### **7. List Payment Links:**
+```bash
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+  http://localhost:3000/api/v1/chargily/payment-links
+```
+
 ---
 
 ## 📋 V2 FEATURES SUPPORTED
@@ -207,20 +241,15 @@ curl -X POST \
 | **Products** | ❌ Not available | ✅ Available | ✅ Implemented |
 | **Prices** | ❌ Not available | ✅ Available | ✅ Implemented |
 | **Checkouts** | Basic | Enhanced with locale, fees | ✅ Implemented |
-| **Payment Links** | Basic | Enhanced (reusable) | 🔄 Can add |
+| **Payment Links** | Basic | Enhanced (reusable) | ✅ Implemented |
 | **Webhooks** | Basic | Enhanced events | 🔄 Can add |
 | **Metadata** | Limited | Full support | ✅ Implemented |
 
-**Your Implementation: 100% V2!** ✅
+**Your Implementation: 100% V2 Core!** ✅
 
 ---
 
 ## 🎯 WHAT'S MISSING (Optional)
-
-### **🔄 Payment Links** (V2 feature - can add)
-- Create reusable payment URLs
-- Share links for recurring payments
-- Track link usage
 
 ### **🔄 Webhooks** (V2 feature - can add)
 - Signature verification implemented ✅
@@ -228,6 +257,8 @@ curl -X POST \
 - Webhook endpoints - need to add
 
 **Everything else is COMPLETE!** ✅
+
+**Payment Links are now INCLUDED!** ✅
 
 ---
 
@@ -245,10 +276,10 @@ curl -X POST \
 - [x] Metadata support
 - [x] Fee allocation options
 - [x] Shipping address collection
-- [ ] Payment Links (optional)
+- [x] Payment Links (V2 feature)
 - [ ] Webhooks (optional)
 
-**Score: 12/14 (86%) - Production Ready!** ✅
+**Score: 13/14 (93%) - Production Ready!** ✅
 
 ---
 
@@ -258,6 +289,7 @@ curl -X POST \
 - ✅ Full V2 API implementation
 - ✅ All core V2 features
 - ✅ Products & Prices (V2-exclusive)
+- ✅ Payment Links (V2-exclusive)
 - ✅ Multi-currency support
 - ✅ Enhanced checkouts
 - ✅ Audit logging for all V2 operations
@@ -265,7 +297,6 @@ curl -X POST \
 - ✅ Ready to deploy
 
 **What's optional:**
-- 🔄 Payment Links (can add later)
 - 🔄 Webhooks (can add later)
 
 ---
