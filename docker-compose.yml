@@ -1,0 +1,162 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # DATABASE OPTIONS (Choose one: postgresql or mysql)
+  # ============================================================================
+
+  # PostgreSQL (Recommended for production)
+  postgres:
+    image: postgres:16-alpine
+    container_name: chargily-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-chargily}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-DANTEjoker}
+      POSTGRES_DB: ${POSTGRES_DB:-chargily_mcp}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chargily"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chargily-network
+
+  # MySQL (Alternative option)
+  mysql:
+    image: mysql:8.0
+    container_name: chargily-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-DANTEjoker}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-chargily_mcp}
+      MYSQL_USER: ${MYSQL_USER:-chargily}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-DANTEjoker}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pDANTEjoker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chargily-network
+
+  # ============================================================================
+  # REDIS (Required for approval queue and rate limiting)
+  # ============================================================================
+
+  redis:
+    image: redis:7-alpine
+    container_name: chargily-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chargily-network
+
+  # ============================================================================
+  # MONITORING & OBSERVABILITY
+  # ============================================================================
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: chargily-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+    networks:
+      - chargily-network
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: chargily-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: 'grafana-clock-panel,grafana-simple-json-datasource'
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - chargily-network
+
+  # ============================================================================
+  # APPLICATION (Uncomment after building)
+  # ============================================================================
+
+  # app:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: chargily-mcp-server
+  #   restart: unless-stopped
+  #   ports:
+  #     - "${PORT:-3000}:${PORT:-3000}"
+  #   environment:
+  #     NODE_ENV: ${NODE_ENV:-production}
+  #     DATABASE_URL: ${DATABASE_URL}
+  #     REDIS_URL: redis://redis:6379
+  #     CHARGILY_MODE: ${CHARGILY_MODE:-sandbox}
+  #     CHARGILY_TEST_API_KEY: ${CHARGILY_TEST_API_KEY}
+  #     CHARGILY_LIVE_API_KEY: ${CHARGILY_LIVE_API_KEY}
+  #     JWT_SECRET: ${JWT_SECRET}
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - chargily-network
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3000}/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  chargily-network:
+    driver: bridge

@@ -1,0 +1,56 @@
+{
+  "name": "@chargily/mcp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chargily Pay MCP Platform - Production-grade Model Context Protocol integration",
+  "keywords": [
+    "chargily",
+    "payment",
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "claude",
+    "chatgpt",
+    "n8n",
+    "automation"
+  ],
+  "author": "Chargily",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --parallel -r dev",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "clean": "pnpm -r clean && rm -rf node_modules",
+    "typecheck": "pnpm -r typecheck",
+    "server:start": "pnpm --filter @chargily/mcp-server start",
+    "server:dev": "pnpm --filter @chargily/mcp-server dev",
+    "docs:dev": "pnpm --filter @chargily/mcp-docs dev",
+    "docs:build": "pnpm --filter @chargily/mcp-docs build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0",
+    "prettier": "^3.2.4",
+    "prisma": "^7.4.0",
+    "tsup": "^8.0.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0",
+  "dependencies": {
+    "@prisma/client": "^7.4.0",
+    "dotenv": "^17.2.4"
+  }
+}

@@ -1,0 +1,121 @@
+{
+  "name": "Chargily Payment Processing Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "tool": "create_checkout",
+        "arguments": {
+          "amount": "={{ $json.amount }}",
+          "currency": "dzd",
+          "payment_method": "edahabia",
+          "success_url": "https://mystore.dz/success",
+          "failure_url": "https://mystore.dz/failure",
+          "customer_id": "={{ $json.customer_id }}",
+          "description": "Order from n8n workflow",
+          "locale": "ar",
+          "metadata": {
+            "order_id": "={{ $json.order_id }}",
+            "source": "n8n_workflow"
+          }
+        }
+      },
+      "id": "chargily-create-checkout",
+      "name": "Chargily - Create Checkout",
+      "type": "@chargily/mcp-tool",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equals",
+              "value2": "pending"
+            }
+          ]
+        }
+      },
+      "id": "check-status",
+      "name": "Check Status",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.checkout_url }}",
+        "options": {}
+      },
+      "id": "send-to-customer",
+      "name": "Send Checkout URL to Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "message": "Checkout creation failed: {{ $json.error }}"
+      },
+      "id": "log-error",
+      "name": "Log Error",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": {
+          "success": true,
+          "checkout_id": "={{ $json.id }}",
+          "checkout_url": "={{ $json.checkout_url }}"
+        }
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Chargily - Create Checkout", "type": "main", "index": 0 }]]
+    },
+    "Chargily - Create Checkout": {
+      "main": [[{ "node": "Check Status", "type": "main", "index": 0 }]]
+    },
+    "Check Status": {
+      "main": [
+        [{ "node": "Send Checkout URL to Customer", "type": "main", "index": 0 }],
+        [{ "node": "Log Error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Checkout URL to Customer": {
+      "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1",
+  "id": "chargily-payment-workflow",
+  "meta": {
+    "instanceId": "your-instance-id"
+  },
+  "tags": ["chargily", "payment", "mcp"]
+}

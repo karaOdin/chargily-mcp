@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "chargily": {
+      "command": "node",
+      "args": ["/absolute/path/to/chargily-mcp/apps/server/dist/index.js"],
+      "env": {
+        "CHARGILY_API_KEY": "test_sk_your_test_key_here",
+        "CHARGILY_MODE": "sandbox",
+        "CHARGILY_WEBHOOK_SECRET": "whsec_your_secret_here"
+      }
+    }
+  }
+}
