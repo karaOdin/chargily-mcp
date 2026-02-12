@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { ListToolsRequestSchema, CallToolRequestSchema, ListResourcesRequestSchema, ListPromptsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { fetch } from 'undici';
 import { z } from 'zod';
+import { createHmac } from 'crypto';
 
 // src/server.ts
 
@@ -787,7 +788,21 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   });
 }
+function verifyWebhookSignature(payload, signature, secret) {
+  try {
+    const expectedSignature = createHmac("sha256", secret).update(payload).digest("hex");
+    return signature === expectedSignature;
+  } catch {
+    return false;
+  }
+}
+function parseWebhookEvent(payload) {
+  return JSON.parse(payload);
+}
+function isValidWebhookEvent(event) {
+  return typeof event === "object" && typeof event.id === "string" && typeof event.type === "string" && typeof event.entity === "string" && typeof event.livemode === "boolean" && typeof event.data === "object" && typeof event.created_at === "number";
+}
 
-export { CancelCheckoutSchema, ChargilyClient, ChargilyMCPServer, CreateCheckoutSchema, CreateCustomerSchema, CreatePaymentLinkSchema, CreatePriceSchema, CreateProductSchema, DeleteCustomerSchema, DeleteProductSchema, ErrorCategory, ExpireCheckoutSchema, GetBalanceSchema, GetCheckoutSchema, GetCustomerSchema, GetPaymentLinkSchema, GetPriceSchema, GetProductSchema, ListCheckoutsSchema, ListCustomersSchema, ListPaymentLinksSchema, ListPricesSchema, ListProductsSchema, MCPError, PROMPTS, RESOURCES, TOOLS, UpdateCustomerSchema, UpdatePaymentLinkSchema, UpdatePriceSchema, UpdateProductSchema, VerifyWebhookSchema, getCheckoutApprovalTier, getTool };
+export { CancelCheckoutSchema, ChargilyClient, ChargilyMCPServer, CreateCheckoutSchema, CreateCustomerSchema, CreatePaymentLinkSchema, CreatePriceSchema, CreateProductSchema, DeleteCustomerSchema, DeleteProductSchema, ErrorCategory, ExpireCheckoutSchema, GetBalanceSchema, GetCheckoutSchema, GetCustomerSchema, GetPaymentLinkSchema, GetPriceSchema, GetProductSchema, ListCheckoutsSchema, ListCustomersSchema, ListPaymentLinksSchema, ListPricesSchema, ListProductsSchema, MCPError, PROMPTS, RESOURCES, TOOLS, UpdateCustomerSchema, UpdatePaymentLinkSchema, UpdatePriceSchema, UpdateProductSchema, VerifyWebhookSchema, getCheckoutApprovalTier, getTool, isValidWebhookEvent, parseWebhookEvent, verifyWebhookSignature };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

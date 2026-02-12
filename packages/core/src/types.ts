@@ -179,11 +179,21 @@ export interface PaginatedResponse<T> {
 }
 
 /**
+ * Webhook event types
+ */
+export type WebhookEventType =
+  | 'checkout.paid'
+  | 'checkout.failed'
+  | 'checkout.canceled'
+  | 'checkout.expired';
+
+/**
  * Webhook event
  */
 export interface WebhookEvent {
   id: string;
-  type: 'checkout.paid' | 'checkout.failed' | 'checkout.canceled';
+  type: WebhookEventType;
+  entity: string;
   data: Checkout;
   livemode: boolean;
   created_at: number;
@@ -266,4 +276,12 @@ export class MCPError extends Error {
     super(message);
     this.name = 'MCPError';
   }
+}
+
+/**
+ * Webhook payload
+ */
+export interface WebhookPayload {
+  event: WebhookEvent;
+  signature: string;
 }

@@ -1,0 +1,131 @@
+version: '3.9'
+
+services:
+  # ============================================================================
+  # PostgreSQL Database
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: chargily-mcp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-chargily}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-DANTEjoker}
+      POSTGRES_DB: ${POSTGRES_DB:-chargily_mcp}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - chargily-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-chargily}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Redis Cache
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: chargily-mcp-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-} --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - chargily-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ============================================================================
+  # Chargily MCP Application
+  # ============================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: chargily-mcp-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Server
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-3000}
+      HOST: ${HOST:-0.0.0.0}
+
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chargily}:${POSTGRES_PASSWORD:-DANTEjoker}@postgres:5432/${POSTGRES_DB:-chargily_mcp}?schema=public
+
+      # Redis
+      REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379
+
+      # Chargily
+      CHARGILY_MODE: ${CHARGILY_MODE:-production}
+      CHARGILY_TEST_API_KEY: ${CHARGILY_TEST_API_KEY}
+      CHARGILY_LIVE_API_KEY: ${CHARGILY_LIVE_API_KEY}
+      CHARGILY_WEBHOOK_SECRET: ${CHARGILY_WEBHOOK_SECRET}
+
+      # Authentication
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL:-3600}
+      JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-2592000}
+
+      # CORS
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      CORS_CREDENTIALS: ${CORS_CREDENTIALS:-true}
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+      # Rate limiting
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-100}
+
+      # Multi-tenancy
+      MULTI_TENANT_ENABLED: ${MULTI_TENANT_ENABLED:-true}
+
+      # Monitoring
+      PROMETHEUS_ENABLED: ${PROMETHEUS_ENABLED:-true}
+    ports:
+      - "${PORT:-3000}:3000"
+    networks:
+      - chargily-network
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });\""]
+      interval: 30s
+      timeout: 3s
+      start_period: 40s
+      retries: 3
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  chargily-network:
+    driver: bridge
+    name: chargily-mcp-network
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  postgres_data:
+    name: chargily-mcp-postgres-data
+  redis_data:
+    name: chargily-mcp-redis-data

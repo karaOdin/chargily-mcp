@@ -8,7 +8,7 @@ import { z } from 'zod';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import Redis from 'ioredis';
-import { ChargilyClient } from '@chargily/mcp-core';
+import { ChargilyClient, parseWebhookEvent, isValidWebhookEvent, verifyWebhookSignature } from '@chargily/mcp-core';
 import { ApiKeyManager, JWTManager, ScopeManager } from '@chargily/mcp-auth';
 
 // src/app.ts
@@ -302,6 +302,177 @@ router.get("/live", (_req, res) => {
   res.status(200).send("OK");
 });
 var health_default = router;
+var prisma2 = new PrismaClient();
+var MetricsService = class {
+  /**
+   * Get application metrics for Prometheus
+   */
+  async getMetrics() {
+    const metrics = [];
+    metrics.push("# HELP chargily_mcp_info Application information");
+    metrics.push("# TYPE chargily_mcp_info gauge");
+    metrics.push(`chargily_mcp_info{version="${process.env.APP_VERSION || "1.0.0"}"} 1`);
+    metrics.push("# HELP chargily_mcp_uptime_seconds Application uptime in seconds");
+    metrics.push("# TYPE chargily_mcp_uptime_seconds counter");
+    metrics.push(`chargily_mcp_uptime_seconds ${process.uptime()}`);
+    const memUsage = process.memoryUsage();
+    metrics.push("# HELP chargily_mcp_memory_bytes Memory usage in bytes");
+    metrics.push("# TYPE chargily_mcp_memory_bytes gauge");
+    metrics.push(`chargily_mcp_memory_bytes{type="rss"} ${memUsage.rss}`);
+    metrics.push(`chargily_mcp_memory_bytes{type="heap_total"} ${memUsage.heapTotal}`);
+    metrics.push(`chargily_mcp_memory_bytes{type="heap_used"} ${memUsage.heapUsed}`);
+    metrics.push(`chargily_mcp_memory_bytes{type="external"} ${memUsage.external}`);
+    metrics.push("# HELP nodejs_eventloop_lag_seconds Event loop lag in seconds");
+    metrics.push("# TYPE nodejs_eventloop_lag_seconds gauge");
+    metrics.push(`nodejs_eventloop_lag_seconds ${await this.getEventLoopLag()}`);
+    try {
+      const [userCount, apiKeyCount, auditLogCount, webhookCount] = await Promise.all([
+        prisma2.user.count(),
+        prisma2.apiKey.count(),
+        prisma2.auditLog.count(),
+        prisma2.webhookLog.count()
+      ]);
+      metrics.push("# HELP chargily_mcp_users_total Total number of users");
+      metrics.push("# TYPE chargily_mcp_users_total gauge");
+      metrics.push(`chargily_mcp_users_total ${userCount}`);
+      metrics.push("# HELP chargily_mcp_api_keys_total Total number of API keys");
+      metrics.push("# TYPE chargily_mcp_api_keys_total gauge");
+      metrics.push(`chargily_mcp_api_keys_total ${apiKeyCount}`);
+      metrics.push("# HELP chargily_mcp_audit_logs_total Total number of audit logs");
+      metrics.push("# TYPE chargily_mcp_audit_logs_total gauge");
+      metrics.push(`chargily_mcp_audit_logs_total ${auditLogCount}`);
+      metrics.push("# HELP chargily_mcp_webhooks_total Total number of webhooks");
+      metrics.push("# TYPE chargily_mcp_webhooks_total gauge");
+      metrics.push(`chargily_mcp_webhooks_total ${webhookCount}`);
+      const [processedWebhooks, failedWebhooks] = await Promise.all([
+        prisma2.webhookLog.count({ where: { processed: true } }),
+        prisma2.webhookLog.count({ where: { processed: false } })
+      ]);
+      const totalWebhooks = processedWebhooks + failedWebhooks;
+      const successRate = totalWebhooks > 0 ? processedWebhooks / totalWebhooks : 1;
+      metrics.push("# HELP chargily_mcp_webhook_success_rate Webhook processing success rate");
+      metrics.push("# TYPE chargily_mcp_webhook_success_rate gauge");
+      metrics.push(`chargily_mcp_webhook_success_rate ${successRate}`);
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1e3);
+      const recentActivity = await prisma2.auditLog.count({
+        where: {
+          timestamp: {
+            gte: oneHourAgo
+          }
+        }
+      });
+      metrics.push("# HELP chargily_mcp_requests_last_hour Requests in the last hour");
+      metrics.push("# TYPE chargily_mcp_requests_last_hour gauge");
+      metrics.push(`chargily_mcp_requests_last_hour ${recentActivity}`);
+      const [successfulRequests, failedRequests] = await Promise.all([
+        prisma2.auditLog.count({
+          where: {
+            timestamp: { gte: oneHourAgo },
+            success: true
+          }
+        }),
+        prisma2.auditLog.count({
+          where: {
+            timestamp: { gte: oneHourAgo },
+            success: false
+          }
+        })
+      ]);
+      const totalRequests = successfulRequests + failedRequests;
+      const apiSuccessRate = totalRequests > 0 ? successfulRequests / totalRequests : 1;
+      metrics.push("# HELP chargily_mcp_api_success_rate API success rate (last hour)");
+      metrics.push("# TYPE chargily_mcp_api_success_rate gauge");
+      metrics.push(`chargily_mcp_api_success_rate ${apiSuccessRate}`);
+    } catch (error) {
+      metrics.push("# Database metrics unavailable");
+    }
+    return metrics.join("\n") + "\n";
+  }
+  /**
+   * Measure event loop lag
+   */
+  async getEventLoopLag() {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      setImmediate(() => {
+        const lag = (Date.now() - start) / 1e3;
+        resolve(lag);
+      });
+    });
+  }
+  /**
+   * Get system stats (for dashboard)
+   */
+  async getStats() {
+    try {
+      const [userCount, apiKeyCount, auditLogCount, webhookCount] = await Promise.all([
+        prisma2.user.count(),
+        prisma2.apiKey.count(),
+        prisma2.auditLog.count(),
+        prisma2.webhookLog.count()
+      ]);
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1e3);
+      const recentActivity = await prisma2.auditLog.count({
+        where: {
+          timestamp: {
+            gte: oneHourAgo
+          }
+        }
+      });
+      const memUsage = process.memoryUsage();
+      return {
+        counts: {
+          users: userCount,
+          apiKeys: apiKeyCount,
+          auditLogs: auditLogCount,
+          webhooks: webhookCount
+        },
+        activity: {
+          lastHour: recentActivity
+        },
+        system: {
+          uptime: process.uptime(),
+          memory: {
+            rss: memUsage.rss,
+            heapTotal: memUsage.heapTotal,
+            heapUsed: memUsage.heapUsed,
+            external: memUsage.external
+          },
+          version: process.env.APP_VERSION || "1.0.0",
+          nodeVersion: process.version,
+          platform: process.platform
+        }
+      };
+    } catch (error) {
+      throw new Error(`Failed to get stats: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  }
+};
+var metricsService = new MetricsService();
+
+// src/routes/metrics.ts
+var router2 = Router();
+router2.get("/metrics", async (_req, res) => {
+  try {
+    const metrics = await metricsService.getMetrics();
+    res.set("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+    res.send(metrics);
+  } catch (error) {
+    res.status(500).send("# Error generating metrics");
+  }
+});
+router2.get("/stats", async (_req, res) => {
+  try {
+    const stats = await metricsService.getStats();
+    res.json(stats);
+  } catch (error) {
+    res.status(500).json({
+      error: "Failed to get stats",
+      message: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+});
+var metrics_default = router2;
 
 // src/repositories/user.repository.ts
 var UserRepository = class {
@@ -675,6 +846,104 @@ var AuditLogRepository = class {
   }
 };
 var auditLogRepository = new AuditLogRepository();
+var prisma3 = new PrismaClient();
+var WebhookRepository = class {
+  /**
+   * Log incoming webhook
+   */
+  async create(data) {
+    return prisma3.webhookLog.create({
+      data
+    });
+  }
+  /**
+   * Mark webhook as processed
+   */
+  async markProcessed(id, success, error) {
+    return prisma3.webhookLog.update({
+      where: { id },
+      data: {
+        processed: true,
+        processedAt: /* @__PURE__ */ new Date(),
+        error
+      }
+    });
+  }
+  /**
+   * Increment retry count
+   */
+  async incrementRetry(id) {
+    return prisma3.webhookLog.update({
+      where: { id },
+      data: {
+        retryCount: {
+          increment: 1
+        }
+      }
+    });
+  }
+  /**
+   * Find webhook by event ID
+   */
+  async findByEventId(eventId) {
+    return prisma3.webhookLog.findUnique({
+      where: { eventId }
+    });
+  }
+  /**
+   * List webhooks
+   */
+  async list(options) {
+    const where = {};
+    if (options?.eventType) {
+      where.eventType = options.eventType;
+    }
+    if (options?.processed !== void 0) {
+      where.processed = options.processed;
+    }
+    const [webhooks, total] = await Promise.all([
+      prisma3.webhookLog.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: options?.limit || 100,
+        skip: options?.offset || 0
+      }),
+      prisma3.webhookLog.count({ where })
+    ]);
+    return { webhooks, total };
+  }
+  /**
+   * Get unprocessed webhooks for retry
+   */
+  async getUnprocessed(maxRetries = 5) {
+    return prisma3.webhookLog.findMany({
+      where: {
+        processed: false,
+        retryCount: {
+          lt: maxRetries
+        }
+      },
+      orderBy: { createdAt: "asc" },
+      take: 100
+    });
+  }
+  /**
+   * Delete old webhook logs
+   */
+  async deleteOlderThan(days) {
+    const cutoffDate = /* @__PURE__ */ new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+    const result = await prisma3.webhookLog.deleteMany({
+      where: {
+        createdAt: {
+          lt: cutoffDate
+        }
+      }
+    });
+    return result.count;
+  }
+};
+var webhookRepository = new WebhookRepository();
 
 // src/services/chargily.service.ts
 var ChargilyService = class {
@@ -1317,7 +1586,7 @@ var ChargilyService = class {
 var chargilyService = new ChargilyService();
 
 // src/routes/api/chargily.routes.ts
-var router2 = Router();
+var router3 = Router();
 function getContext(req) {
   return {
     userId: req.user?.id || "system",
@@ -1326,7 +1595,7 @@ function getContext(req) {
     userAgent: req.get("user-agent")
   };
 }
-router2.get("/balance", async (req, res, next) => {
+router3.get("/balance", async (req, res, next) => {
   try {
     const balance = await chargilyService.getBalance(getContext(req));
     res.json(balance);
@@ -1334,7 +1603,7 @@ router2.get("/balance", async (req, res, next) => {
     next(error);
   }
 });
-router2.post("/customers", async (req, res, next) => {
+router3.post("/customers", async (req, res, next) => {
   try {
     const customer = await chargilyService.createCustomer(req.body, getContext(req));
     res.status(201).json(customer);
@@ -1342,7 +1611,7 @@ router2.post("/customers", async (req, res, next) => {
     next(error);
   }
 });
-router2.get("/customers/:id", async (req, res, next) => {
+router3.get("/customers/:id", async (req, res, next) => {
   try {
     const customer = await chargilyService.getCustomer(req.params.id, getContext(req));
     res.json(customer);
@@ -1350,7 +1619,7 @@ router2.get("/customers/:id", async (req, res, next) => {
     next(error);
   }
 });
-router2.get("/customers", async (req, res, next) => {
+router3.get("/customers", async (req, res, next) => {
   try {
     const customers = await chargilyService.listCustomers(
       {
@@ -1364,7 +1633,7 @@ router2.get("/customers", async (req, res, next) => {
     next(error);
   }
 });
-router2.patch("/customers/:id", async (req, res, next) => {
+router3.patch("/customers/:id", async (req, res, next) => {
   try {
     const customer = await chargilyService.updateCustomer(
       req.params.id,
@@ -1376,7 +1645,7 @@ router2.patch("/customers/:id", async (req, res, next) => {
     next(error);
   }
 });
-router2.delete("/customers/:id", async (req, res, next) => {
+router3.delete("/customers/:id", async (req, res, next) => {
   try {
     const result = await chargilyService.deleteCustomer(req.params.id, getContext(req));
     res.json(result);
@@ -1384,7 +1653,7 @@ router2.delete("/customers/:id", async (req, res, next) => {
     next(error);
   }
 });
-router2.post("/products", async (req, res, next) => {
+router3.post("/products", async (req, res, next) => {
   try {
     const product = await chargilyService.createProduct(req.body, getContext(req));
     res.status(201).json(product);
@@ -1392,7 +1661,7 @@ router2.post("/products", async (req, res, next) => {
     next(error);
   }
 });
-router2.get("/products/:id", async (req, res, next) => {
+router3.get("/products/:id", async (req, res, next) => {
   try {
     const product = await chargilyService.getProduct(req.params.id, getContext(req));
     res.json(product);
@@ -1400,7 +1669,7 @@ router2.get("/products/:id", async (req, res, next) => {
     next(error);
   }
 });
-router2.get("/products", async (req, res, next) => {
+router3.get("/products", async (req, res, next) => {
   try {
     const products = await chargilyService.listProducts(
       {
@@ -1414,7 +1683,7 @@ router2.get("/products", async (req, res, next) => {
     next(error);
   }
 });
-router2.post("/prices", async (req, res, next) => {
+router3.post("/prices", async (req, res, next) => {
   try {
     const price = await chargilyService.createPrice(req.body, getContext(req));
     res.status(201).json(price);
@@ -1422,7 +1691,7 @@ router2.post("/prices", async (req, res, next) => {
     next(error);
   }
 });
-router2.get("/prices/:id", async (req, res, next) => {
+router3.get("/prices/:id", async (req, res, next) => {
   try {
     const price = await chargilyService.getPrice(req.params.id, getContext(req));
     res.json(price);
@@ -1430,7 +1699,7 @@ router2.get("/prices/:id", async (req, res, next) => {
     next(error);
   }
 });
-router2.get("/prices", async (req, res, next) => {
+router3.get("/prices", async (req, res, next) => {
   try {
     const prices = await chargilyService.listPrices(
       {
@@ -1445,7 +1714,7 @@ router2.get("/prices", async (req, res, next) => {
     next(error);
   }
 });
-router2.post("/checkouts", async (req, res, next) => {
+router3.post("/checkouts", async (req, res, next) => {
   try {
     const checkout = await chargilyService.createCheckout(req.body, getContext(req));
     res.status(201).json(checkout);
@@ -1453,7 +1722,7 @@ router2.post("/checkouts", async (req, res, next) => {
     next(error);
   }
 });
-router2.get("/checkouts/:id", async (req, res, next) => {
+router3.get("/checkouts/:id", async (req, res, next) => {
   try {
     const checkout = await chargilyService.getCheckout(req.params.id, getContext(req));
     res.json(checkout);
@@ -1461,7 +1730,7 @@ router2.get("/checkouts/:id", async (req, res, next) => {
     next(error);
   }
 });
-router2.get("/checkouts", async (req, res, next) => {
+router3.get("/checkouts", async (req, res, next) => {
   try {
     const checkouts = await chargilyService.listCheckouts(
       {
@@ -1475,7 +1744,7 @@ router2.get("/checkouts", async (req, res, next) => {
     next(error);
   }
 });
-router2.post("/checkouts/:id/expire", async (req, res, next) => {
+router3.post("/checkouts/:id/expire", async (req, res, next) => {
   try {
     const checkout = await chargilyService.expireCheckout(req.params.id, getContext(req));
     res.json(checkout);
@@ -1483,7 +1752,7 @@ router2.post("/checkouts/:id/expire", async (req, res, next) => {
     next(error);
   }
 });
-router2.post("/payment-links", async (req, res, next) => {
+router3.post("/payment-links", async (req, res, next) => {
   try {
     const paymentLink = await chargilyService.createPaymentLink(req.body, getContext(req));
     res.status(201).json(paymentLink);
@@ -1491,7 +1760,7 @@ router2.post("/payment-links", async (req, res, next) => {
     next(error);
   }
 });
-router2.get("/payment-links/:id", async (req, res, next) => {
+router3.get("/payment-links/:id", async (req, res, next) => {
   try {
     const paymentLink = await chargilyService.getPaymentLink(req.params.id, getContext(req));
     res.json(paymentLink);
@@ -1499,7 +1768,7 @@ router2.get("/payment-links/:id", async (req, res, next) => {
     next(error);
   }
 });
-router2.get("/payment-links", async (req, res, next) => {
+router3.get("/payment-links", async (req, res, next) => {
   try {
     const paymentLinks = await chargilyService.listPaymentLinks(
       {
@@ -1514,7 +1783,7 @@ router2.get("/payment-links", async (req, res, next) => {
     next(error);
   }
 });
-router2.patch("/payment-links/:id", async (req, res, next) => {
+router3.patch("/payment-links/:id", async (req, res, next) => {
   try {
     const paymentLink = await chargilyService.updatePaymentLink(
       req.params.id,
@@ -1526,7 +1795,7 @@ router2.patch("/payment-links/:id", async (req, res, next) => {
     next(error);
   }
 });
-var chargily_routes_default = router2;
+var chargily_routes_default = router3;
 var apiKeyManager = new ApiKeyManager();
 var jwtManager = new JWTManager({
   secret: config.jwtSecret,
@@ -1688,8 +1957,8 @@ async function authenticate(req, _res, next) {
 }
 
 // src/routes/api/auth.routes.ts
-var router3 = Router();
-router3.post("/api-keys", authenticate, async (req, res, next) => {
+var router4 = Router();
+router4.post("/api-keys", authenticate, async (req, res, next) => {
   try {
     if (!req.user) {
       throw new AppError(401, "Not authenticated", "unauthorized");
@@ -1718,7 +1987,7 @@ router3.post("/api-keys", authenticate, async (req, res, next) => {
     next(error);
   }
 });
-router3.get("/api-keys", authenticate, async (req, res, next) => {
+router4.get("/api-keys", authenticate, async (req, res, next) => {
   try {
     if (!req.user) {
       throw new AppError(401, "Not authenticated", "unauthorized");
@@ -1741,7 +2010,7 @@ router3.get("/api-keys", authenticate, async (req, res, next) => {
     next(error);
   }
 });
-router3.delete("/api-keys/:id", authenticate, async (req, res, next) => {
+router4.delete("/api-keys/:id", authenticate, async (req, res, next) => {
   try {
     if (!req.user) {
       throw new AppError(401, "Not authenticated", "unauthorized");
@@ -1752,19 +2021,244 @@ router3.delete("/api-keys/:id", authenticate, async (req, res, next) => {
     next(error);
   }
 });
-router3.get("/verify", authenticate, async (req, res) => {
+router4.get("/verify", authenticate, async (req, res) => {
   res.json({
     authenticated: true,
     user: req.user
   });
 });
-var auth_routes_default = router3;
+var auth_routes_default = router4;
+var WebhookService = class {
+  /**
+   * Process incoming webhook
+   */
+  async processWebhook(rawPayload, signature) {
+    let webhookLog;
+    try {
+      const event = parseWebhookEvent(rawPayload);
+      if (!isValidWebhookEvent(event)) {
+        throw new Error("Invalid webhook event structure");
+      }
+      const webhookSecret = config.chargilyWebhookSecret;
+      if (!webhookSecret) {
+        logger.warn("Webhook secret not configured - signature verification skipped");
+      }
+      const verified = webhookSecret ? verifyWebhookSignature(rawPayload, signature, webhookSecret) : false;
+      if (webhookSecret && !verified) {
+        throw new Error("Invalid webhook signature");
+      }
+      const existing = await webhookRepository.findByEventId(event.id);
+      if (existing) {
+        logger.info({ eventId: event.id }, "Duplicate webhook received, ignoring");
+        return { status: "duplicate", event };
+      }
+      webhookLog = await webhookRepository.create({
+        eventType: event.type,
+        eventId: event.id,
+        payload: event,
+        signature,
+        verified: verified || !webhookSecret
+      });
+      await this.handleEvent(event);
+      await webhookRepository.markProcessed(webhookLog.id, true);
+      logger.info(
+        {
+          eventId: event.id,
+          eventType: event.type,
+          verified
+        },
+        "Webhook processed successfully"
+      );
+      return { status: "success", event };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      logger.error(
+        {
+          error: errorMessage,
+          signature
+        },
+        "Webhook processing failed"
+      );
+      if (webhookLog) {
+        await webhookRepository.markProcessed(webhookLog.id, false, errorMessage);
+      }
+      throw error;
+    }
+  }
+  /**
+   * Handle webhook event by type
+   */
+  async handleEvent(event) {
+    const { type, data } = event;
+    switch (type) {
+      case "checkout.paid":
+        await this.handleCheckoutPaid(data);
+        break;
+      case "checkout.failed":
+        await this.handleCheckoutFailed(data);
+        break;
+      case "checkout.expired":
+        await this.handleCheckoutExpired(data);
+        break;
+      default:
+        logger.warn({ eventType: type }, "Unhandled webhook event type");
+    }
+  }
+  /**
+   * Handle successful checkout
+   */
+  async handleCheckoutPaid(checkout) {
+    logger.info(
+      {
+        checkoutId: checkout.id,
+        amount: checkout.amount,
+        currency: checkout.currency
+      },
+      "Checkout paid"
+    );
+  }
+  /**
+   * Handle failed checkout
+   */
+  async handleCheckoutFailed(checkout) {
+    logger.info(
+      {
+        checkoutId: checkout.id,
+        amount: checkout.amount
+      },
+      "Checkout failed"
+    );
+  }
+  /**
+   * Handle expired checkout
+   */
+  async handleCheckoutExpired(checkout) {
+    logger.info(
+      {
+        checkoutId: checkout.id
+      },
+      "Checkout expired"
+    );
+  }
+  /**
+   * Retry failed webhooks
+   */
+  async retryFailedWebhooks() {
+    const unprocessed = await webhookRepository.getUnprocessed(5);
+    logger.info({ count: unprocessed.length }, "Retrying failed webhooks");
+    for (const webhook of unprocessed) {
+      try {
+        const event = webhook.payload;
+        await this.handleEvent(event);
+        await webhookRepository.markProcessed(webhook.id, true);
+      } catch (error) {
+        await webhookRepository.incrementRetry(webhook.id);
+        logger.error(
+          {
+            webhookId: webhook.id,
+            error: error instanceof Error ? error.message : "Unknown error"
+          },
+          "Webhook retry failed"
+        );
+      }
+    }
+  }
+  /**
+   * List webhook logs
+   */
+  async listWebhooks(options) {
+    return webhookRepository.list(options);
+  }
+  /**
+   * Get webhook statistics
+   */
+  async getStats() {
+    const [total, processed, failed, byType] = await Promise.all([
+      webhookRepository.list({ limit: 0 }),
+      webhookRepository.list({ processed: true, limit: 0 }),
+      webhookRepository.list({ processed: false, limit: 0 }),
+      // Get counts by type (simplified)
+      webhookRepository.list({ limit: 1e3 })
+    ]);
+    const typeStats = byType.webhooks.reduce((acc, webhook) => {
+      acc[webhook.eventType] = (acc[webhook.eventType] || 0) + 1;
+      return acc;
+    }, {});
+    return {
+      total: total.total,
+      processed: processed.total,
+      failed: failed.total,
+      byType: typeStats
+    };
+  }
+};
+var webhookService = new WebhookService();
+
+// src/routes/api/webhooks.routes.ts
+var router5 = Router();
+router5.post("/chargily", async (req, res, next) => {
+  try {
+    const rawBody = JSON.stringify(req.body);
+    const signature = req.get("X-Signature") || req.get("x-signature") || "";
+    if (!signature) {
+      throw new AppError(400, "Missing webhook signature");
+    }
+    const result = await webhookService.processWebhook(rawBody, signature);
+    res.json({
+      status: "received",
+      eventId: result.event.id
+    });
+  } catch (error) {
+    logger.error({ error }, "Webhook processing error");
+    if (error instanceof AppError && error.statusCode === 400) {
+      return res.status(200).json({
+        status: "error",
+        message: error.message
+      });
+    }
+    next(error);
+  }
+});
+router5.get("/logs", async (req, res, next) => {
+  try {
+    const result = await webhookService.listWebhooks({
+      eventType: req.query.eventType,
+      processed: req.query.processed === "true" ? true : req.query.processed === "false" ? false : void 0,
+      limit: Number(req.query.limit) || 100,
+      offset: Number(req.query.offset) || 0
+    });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+router5.get("/stats", async (req, res, next) => {
+  try {
+    const stats = await webhookService.getStats();
+    res.json(stats);
+  } catch (error) {
+    next(error);
+  }
+});
+router5.post("/retry", async (req, res, next) => {
+  try {
+    await webhookService.retryFailedWebhooks();
+    res.json({
+      status: "success",
+      message: "Failed webhooks retried"
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+var webhooks_routes_default = router5;
 
 // src/routes/api/index.ts
-var router4 = Router();
-router4.use("/auth", auth_routes_default);
-router4.use("/chargily", authenticate, chargily_routes_default);
-router4.get("/", (_req, res) => {
+var router6 = Router();
+router6.use("/auth", auth_routes_default);
+router6.use("/webhooks", webhooks_routes_default);
+router6.use("/chargily", authenticate, chargily_routes_default);
+router6.get("/", (_req, res) => {
   res.json({
     version: "1.0.0",
     endpoints: {
@@ -1776,16 +2270,38 @@ router4.get("/", (_req, res) => {
         update: "PATCH /api/v1/chargily/customers/:id",
         delete: "DELETE /api/v1/chargily/customers/:id"
       },
+      products: {
+        create: "POST /api/v1/chargily/products",
+        get: "GET /api/v1/chargily/products/:id",
+        list: "GET /api/v1/chargily/products"
+      },
+      prices: {
+        create: "POST /api/v1/chargily/prices",
+        get: "GET /api/v1/chargily/prices/:id",
+        list: "GET /api/v1/chargily/prices"
+      },
       checkouts: {
         create: "POST /api/v1/chargily/checkouts",
         get: "GET /api/v1/chargily/checkouts/:id",
         list: "GET /api/v1/chargily/checkouts",
         expire: "POST /api/v1/chargily/checkouts/:id/expire"
+      },
+      paymentLinks: {
+        create: "POST /api/v1/chargily/payment-links",
+        get: "GET /api/v1/chargily/payment-links/:id",
+        list: "GET /api/v1/chargily/payment-links",
+        update: "PATCH /api/v1/chargily/payment-links/:id"
+      },
+      webhooks: {
+        receive: "POST /api/v1/webhooks/chargily",
+        logs: "GET /api/v1/webhooks/logs",
+        stats: "GET /api/v1/webhooks/stats",
+        retry: "POST /api/v1/webhooks/retry"
       }
     }
   });
 });
-var api_default = router4;
+var api_default = router6;
 
 // src/app.ts
 var app = express();
@@ -1799,6 +2315,7 @@ app.use(express.json({ limit: process.env.MAX_REQUEST_SIZE || "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: process.env.MAX_REQUEST_SIZE || "10mb" }));
 app.use(httpLogger);
 app.use(health_default);
+app.use(metrics_default);
 app.use("/api/v1", api_default);
 app.get("/", (_req, res) => {
   res.json({

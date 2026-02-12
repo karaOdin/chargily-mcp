@@ -161,11 +161,16 @@ interface PaginatedResponse<T> {
     };
 }
 /**
+ * Webhook event types
+ */
+type WebhookEventType = 'checkout.paid' | 'checkout.failed' | 'checkout.canceled' | 'checkout.expired';
+/**
  * Webhook event
  */
 interface WebhookEvent {
     id: string;
-    type: 'checkout.paid' | 'checkout.failed' | 'checkout.canceled';
+    type: WebhookEventType;
+    entity: string;
     data: Checkout;
     livemode: boolean;
     created_at: number;
@@ -237,6 +242,13 @@ declare class MCPError extends Error {
     statusCode?: number | undefined;
     retryable: boolean;
     constructor(category: ErrorCategory, message: string, statusCode?: number | undefined, retryable?: boolean);
+}
+/**
+ * Webhook payload
+ */
+interface WebhookPayload {
+    event: WebhookEvent;
+    signature: string;
 }
 
 /**
@@ -832,4 +844,29 @@ declare const VerifyWebhookSchema: z.ZodObject<{
     secret: string;
 }>;
 
-export { type ApprovalTier, type AuditLog, type Balance, type BalanceWallet, CancelCheckoutSchema, ChargilyClient, type ChargilyConfig, ChargilyMCPServer, type Checkout, type CheckoutStatus, CreateCheckoutSchema, CreateCustomerSchema, CreatePaymentLinkSchema, CreatePriceSchema, CreateProductSchema, type Currency, type Customer, type CustomerAddress, DeleteCustomerSchema, DeleteProductSchema, type Discount, type Environment, ErrorCategory, ExpireCheckoutSchema, type FeeAllocation, GetBalanceSchema, GetCheckoutSchema, GetCustomerSchema, GetPaymentLinkSchema, GetPriceSchema, GetProductSchema, ListCheckoutsSchema, ListCustomersSchema, ListPaymentLinksSchema, ListPricesSchema, ListProductsSchema, type Locale, MCPError, PROMPTS, type PaginatedResponse, type PaymentLink, type PaymentLinkItem, type PaymentMethod, type Price, type Product, type PromptDefinition, RESOURCES, type ResourceDefinition, type ResourceURI, type RetryConfig, TOOLS, type ToolContext, type ToolDefinition, UpdateCustomerSchema, UpdatePaymentLinkSchema, UpdatePriceSchema, UpdateProductSchema, VerifyWebhookSchema, type WebhookEvent, getCheckoutApprovalTier, getTool };
+/**
+ * Webhook utilities for Chargily Pay
+ */
+
+/**
+ * Verify webhook signature
+ * @param payload - Raw webhook payload (as string)
+ * @param signature - Signature from X-Signature header
+ * @param secret - Webhook secret from Chargily dashboard
+ * @returns true if signature is valid
+ */
+declare function verifyWebhookSignature(payload: string, signature: string, secret: string): boolean;
+/**
+ * Parse webhook event
+ * @param payload - Raw webhook payload
+ * @returns Parsed webhook event
+ */
+declare function parseWebhookEvent(payload: string): WebhookEvent;
+/**
+ * Validate webhook event structure
+ * @param event - Webhook event to validate
+ * @returns true if event structure is valid
+ */
+declare function isValidWebhookEvent(event: any): event is WebhookEvent;
+
+export { type ApprovalTier, type AuditLog, type Balance, type BalanceWallet, CancelCheckoutSchema, ChargilyClient, type ChargilyConfig, ChargilyMCPServer, type Checkout, type CheckoutStatus, CreateCheckoutSchema, CreateCustomerSchema, CreatePaymentLinkSchema, CreatePriceSchema, CreateProductSchema, type Currency, type Customer, type CustomerAddress, DeleteCustomerSchema, DeleteProductSchema, type Discount, type Environment, ErrorCategory, ExpireCheckoutSchema, type FeeAllocation, GetBalanceSchema, GetCheckoutSchema, GetCustomerSchema, GetPaymentLinkSchema, GetPriceSchema, GetProductSchema, ListCheckoutsSchema, ListCustomersSchema, ListPaymentLinksSchema, ListPricesSchema, ListProductsSchema, type Locale, MCPError, PROMPTS, type PaginatedResponse, type PaymentLink, type PaymentLinkItem, type PaymentMethod, type Price, type Product, type PromptDefinition, RESOURCES, type ResourceDefinition, type ResourceURI, type RetryConfig, TOOLS, type ToolContext, type ToolDefinition, UpdateCustomerSchema, UpdatePaymentLinkSchema, UpdatePriceSchema, UpdateProductSchema, VerifyWebhookSchema, type WebhookEvent, type WebhookEventType, type WebhookPayload, getCheckoutApprovalTier, getTool, isValidWebhookEvent, parseWebhookEvent, verifyWebhookSignature };

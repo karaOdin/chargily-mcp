@@ -10,3 +10,4 @@ export * from './resources';
 export * from './prompts';
 export * from './client';
 export * from './schemas';
+export * from './webhooks';

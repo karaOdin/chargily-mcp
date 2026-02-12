@@ -10,6 +10,7 @@ import { httpLogger } from './utils/logger.js';
 import { config } from './utils/config.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import healthRoutes from './routes/health.js';
+import metricsRoutes from './routes/metrics.js';
 import apiRoutes from './routes/api/index.js';
 
 // Create Express app
@@ -44,6 +45,9 @@ app.use(httpLogger);
 
 // Health checks
 app.use(healthRoutes);
+
+// Metrics (Prometheus)
+app.use(metricsRoutes);
 
 // API v1 routes
 app.use('/api/v1', apiRoutes);
