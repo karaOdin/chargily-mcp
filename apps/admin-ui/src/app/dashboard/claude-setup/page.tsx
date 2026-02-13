@@ -127,10 +127,9 @@ export default function ClaudeSetupPage() {
               </pre>
               <div className="absolute top-2 right-2 flex gap-2">
                 <Button
-                  size="sm"
                   variant="outline"
                   onClick={copyToClipboard}
-                  className="bg-background"
+                  className="bg-background h-8 px-3 text-xs"
                 >
                   {copied ? (
                     <>
@@ -145,10 +144,9 @@ export default function ClaudeSetupPage() {
                   )}
                 </Button>
                 <Button
-                  size="sm"
                   variant="outline"
                   onClick={downloadConfig}
-                  className="bg-background"
+                  className="bg-background h-8 px-3 text-xs"
                 >
                   <Download className="h-4 w-4 mr-1" />
                   Download
