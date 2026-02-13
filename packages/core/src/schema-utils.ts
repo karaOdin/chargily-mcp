@@ -6,7 +6,7 @@
 import { z } from 'zod';
 
 export function zodToJsonSchema(schema: z.ZodType<any>): any {
-  const def = schema._def;
+  const def = schema._def as any; // Cast to any for dynamic property access
   const typeName = def.typeName;
 
   switch (typeName) {
