@@ -482,6 +482,13 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
+    // Handle notifications (no id field) - just acknowledge with 200
+    if (id === undefined || id === null) {
+      // This is a notification, not a request
+      // Notifications don't get responses, just acknowledge
+      return res.status(200).json({});
+    }
+
     const server = await getMCPServer(req);
     const handler = server['server']._requestHandlers.get(method);
 
@@ -492,7 +499,7 @@ router.post('/', async (req: Request, res: Response) => {
           code: -32601,
           message: `Method not found: ${method}`,
         },
-        id: id || null,
+        id: id,
       });
     }
 
