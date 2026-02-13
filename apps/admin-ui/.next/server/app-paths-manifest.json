@@ -1,7 +1,0 @@
-{
-  "/page": "app/page.js",
-  "/dashboard/page": "app/dashboard/page.js",
-  "/dashboard/api-keys/page": "app/dashboard/api-keys/page.js",
-  "/dashboard/approvals/page": "app/dashboard/approvals/page.js",
-  "/dashboard/webhooks/page": "app/dashboard/webhooks/page.js"
-}

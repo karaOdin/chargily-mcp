@@ -4,7 +4,6 @@
  */
 
 import { EventEmitter } from 'events';
-import type { ResourceDefinition } from './resources';
 
 export interface Subscription {
   id: string;

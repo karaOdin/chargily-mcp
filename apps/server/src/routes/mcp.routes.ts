@@ -3,7 +3,7 @@
  * Exposes MCP server functionality via REST API
  */
 
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { ChargilyMCPServer } from '@chargily/mcp-core';
 import { subscriptionManager } from '@chargily/mcp-core/subscriptions';
 import { authenticate } from '../middleware/auth.middleware.js';
@@ -15,8 +15,66 @@ import { userRepository } from '../repositories/index.js';
 
 const router = express.Router();
 
-// Apply authentication to all MCP routes
-router.use(authenticate);
+// MCP-specific auth middleware that returns JSON-RPC errors
+router.use(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const authHeader = req.get('authorization');
+    if (!authHeader) {
+      return res.json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32001,
+          message: 'Missing authorization header',
+        },
+        id: req.body?.id || null,
+      });
+    }
+
+    const match = authHeader.match(/^Bearer (.+)$/);
+    if (!match) {
+      return res.json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32001,
+          message: 'Invalid authorization format',
+        },
+        id: req.body?.id || null,
+      });
+    }
+
+    const token = match[1];
+    const { authService } = await import('../services/auth.service.js');
+
+    try {
+      const payload = authService.verifyJWT(token);
+      req.user = {
+        id: payload.sub,
+        tenantId: payload.tid,
+        scopes: payload.scopes,
+        method: 'jwt',
+      };
+      next();
+    } catch (error) {
+      return res.json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32001,
+          message: error instanceof Error ? error.message : 'Authentication failed',
+        },
+        id: req.body?.id || null,
+      });
+    }
+  } catch (error) {
+    return res.json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32603,
+        message: 'Internal error',
+      },
+      id: req.body?.id || null,
+    });
+  }
+});
 
 // Create MCP server instance (shared across requests)
 let mcpServer: ChargilyMCPServer | null = null;
@@ -393,6 +451,78 @@ router.get('/stream', (req: Request, res: Response) => {
 });
 
 /**
+ * POST /mcp
+ * Unified MCP JSON-RPC endpoint
+ * Handles all MCP protocol messages in standard JSON-RPC format
+ */
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const { jsonrpc, method, params, id } = req.body;
+
+    // Validate JSON-RPC format
+    if (jsonrpc !== '2.0') {
+      return res.json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32600,
+          message: 'Invalid Request: jsonrpc must be "2.0"',
+        },
+        id: id || null,
+      });
+    }
+
+    if (!method) {
+      return res.json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32600,
+          message: 'Invalid Request: method is required',
+        },
+        id: id || null,
+      });
+    }
+
+    const server = await getMCPServer(req);
+    const handler = server['server']._requestHandlers.get(method);
+
+    if (!handler) {
+      return res.json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32601,
+          message: `Method not found: ${method}`,
+        },
+        id: id || null,
+      });
+    }
+
+    const handlerResult = await handler({
+      method,
+      params: params || {},
+    } as any);
+
+    // MCP handlers return the actual data, wrap in JSON-RPC envelope
+    return res.json({
+      jsonrpc: '2.0',
+      result: handlerResult,
+      id: id,
+    });
+
+  } catch (error) {
+    logger.error({ error, method: req.body.method }, 'MCP JSON-RPC request failed');
+
+    return res.json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32603,
+        message: error instanceof Error ? error.message : 'Internal error',
+      },
+      id: req.body.id || null,
+    });
+  }
+});
+
+/**
  * GET /mcp
  * MCP endpoint info
  */
@@ -400,17 +530,18 @@ router.get('/', (req: Request, res: Response) => {
   res.json({
     name: 'Chargily MCP Server',
     version: '1.0.0',
-    protocol: 'HTTP',
+    protocol: 'HTTP + JSON-RPC 2.0',
     endpoints: {
-      'tools/list': 'POST /mcp/tools/list',
-      'tools/call': 'POST /mcp/tools/call',
-      'resources/list': 'POST /mcp/resources/list',
-      'resources/read': 'POST /mcp/resources/read',
-      'prompts/list': 'POST /mcp/prompts/list',
-      'prompts/get': 'POST /mcp/prompts/get',
-      stream: 'GET /mcp/stream (SSE)',
+      '/': 'POST /mcp - Unified JSON-RPC endpoint (recommended)',
+      'tools/list': 'POST /mcp/tools/list - Legacy endpoint',
+      'tools/call': 'POST /mcp/tools/call - Legacy endpoint',
+      'resources/list': 'POST /mcp/resources/list - Legacy endpoint',
+      'resources/read': 'POST /mcp/resources/read - Legacy endpoint',
+      'prompts/list': 'POST /mcp/prompts/list - Legacy endpoint',
+      'prompts/get': 'POST /mcp/prompts/get - Legacy endpoint',
+      stream: 'GET /mcp/stream (SSE) - Real-time updates',
     },
-    authentication: 'Bearer token required',
+    authentication: 'Bearer token required in Authorization header',
     documentation: 'See MCP_TOOLS.md, MCP_RESOURCES.md, MCP_PROMPTS.md',
   });
 });
