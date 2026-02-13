@@ -11,3 +11,5 @@ export * from './prompts';
 export * from './client';
 export * from './schemas';
 export * from './webhooks';
+export * from './schema-utils';
+export * from './subscriptions';

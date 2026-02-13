@@ -21,11 +21,11 @@ export class ApiKeyRepository {
   }
 
   /**
-   * Find API key by hashed key
+   * Find API key by lookup hash (SHA-256)
    */
   async findByHashedKey(hashedKey: string): Promise<ApiKey | null> {
     return prisma.apiKey.findUnique({
-      where: { hashedKey },
+      where: { lookupHash: hashedKey },  // Use lookupHash for fast SHA-256 lookup
       include: { user: true },
     });
   }

@@ -1,0 +1,364 @@
+// Prisma Schema for Chargily MCP Platform
+// Supports both PostgreSQL and MySQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" // Change to "mysql" for MySQL
+}
+
+// ============================================================================
+// USER MANAGEMENT
+// ============================================================================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String?  // Hashed password for local auth
+  role      String   @default("user") // user, admin, owner
+  tenantId  String?  // For multi-tenancy
+
+  // Relations
+  apiKeys       ApiKey[]
+  oauthClients  OAuthClient[]
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  approvals     ApprovalRequest[]
+
+  // Metadata
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastLogin DateTime?
+
+  @@index([email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+// ============================================================================
+// API KEY AUTHENTICATION
+// ============================================================================
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  key         String    @unique // Prefix visible (e.g., "live_sk_abc...")
+  hashedKey   String    @unique // Bcrypt hashed full key
+  name        String?   // Optional name/label
+
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId    String?
+
+  // Permissions
+  scopes      Json      // Array of scope strings
+  isTest      Boolean   @default(false) // test_sk_ vs live_sk_
+
+  // Status
+  isActive    Boolean   @default(true)
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  revokedBy   String?
+
+  // Metadata
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([tenantId])
+  @@index([hashedKey])
+  @@index([isActive, expiresAt])
+  @@map("api_keys")
+}
+
+// ============================================================================
+// OAUTH 2.0 AUTHENTICATION
+// ============================================================================
+
+model OAuthClient {
+  id           String   @id @default(cuid())
+  clientId     String   @unique
+  clientSecret String   // Hashed
+  name         String
+
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // OAuth Configuration
+  redirectUris Json     // Array of allowed redirect URIs
+  scopes       Json     // Array of allowed scopes
+  grantTypes   Json     // Array of grant types (authorization_code, refresh_token, etc.)
+
+  // Status
+  isActive     Boolean  @default(true)
+
+  // Relations
+  authorizationCodes OAuthAuthorizationCode[]
+  tokens            OAuthToken[]
+
+  // Metadata
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([clientId])
+  @@map("oauth_clients")
+}
+
+model OAuthAuthorizationCode {
+  id          String   @id @default(cuid())
+  code        String   @unique
+
+  clientId    String
+  client      OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  userId      String
+  redirectUri String
+  scopes      Json     // Array of scopes
+
+  // PKCE
+  codeChallenge       String?
+  codeChallengeMethod String?
+
+  // Status
+  usedAt      DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([code])
+  @@index([clientId])
+  @@index([expiresAt])
+  @@map("oauth_authorization_codes")
+}
+
+model OAuthToken {
+  id           String   @id @default(cuid())
+  accessToken  String   @unique
+  refreshToken String?  @unique
+  tokenType    String   @default("Bearer")
+
+  clientId     String
+  client       OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  userId       String
+  scopes       Json     // Array of scopes
+
+  // Status
+  expiresAt    DateTime
+  refreshExpiresAt DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([accessToken])
+  @@index([refreshToken])
+  @@index([clientId])
+  @@index([expiresAt])
+  @@map("oauth_tokens")
+}
+
+// ============================================================================
+// SESSION MANAGEMENT (JWT)
+// ============================================================================
+
+model Session {
+  id          String   @id @default(cuid())
+  sessionId   String   @unique
+
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId    String?
+
+  // Session data
+  scopes      Json     // Array of scopes
+  metadata    Json?
+
+  // IP tracking
+  ipAddress   String?
+  userAgent   String?
+
+  // Status
+  expiresAt   DateTime
+  lastActiveAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ============================================================================
+// APPROVAL WORKFLOW
+// ============================================================================
+
+model ApprovalRequest {
+  id          String   @id @default(cuid())
+
+  // Request details
+  action      String   // Tool/action being approved
+  input       Json     // Input parameters
+  tier        String   // tier1, tier2, tier3
+  status      String   @default("pending") // pending, approved, rejected, expired
+
+  // Requester
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId    String?
+  requestedBy Json     // {userId, tenantId, timestamp}
+
+  // Approval requirements
+  requiredApprovers Int
+  approvals   Json     @default("[]") // Array of approvals
+
+  // Result
+  result      Json?    // Result if approved
+  reason      String?  // Rejection reason
+
+  // Timing
+  expiresAt   DateTime
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([tenantId])
+  @@index([status, expiresAt])
+  @@index([createdAt])
+  @@map("approval_requests")
+}
+
+// ============================================================================
+// AUDIT LOGGING
+// ============================================================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+
+  // Who
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId    String?
+  ipAddress   String?
+  userAgent   String?
+
+  // What
+  action      String   // create_checkout, delete_customer, etc.
+  resource    String?  // checkout, customer, etc.
+  resourceId  String?  // ID of resource affected
+
+  // Request/Response
+  input       Json?    // Request parameters
+  output      Json?    // Response data
+  statusCode  Int?     // HTTP status code
+
+  // Approval
+  approvalId  String?  // If action required approval
+  approved    Boolean  @default(false)
+
+  // Result
+  success     Boolean
+  error       String?  // Error message if failed
+
+  // Metadata
+  metadata    Json?
+  duration    Int?     // Request duration in ms
+
+  // Compliance
+  dataClassification String @default("internal") // public, internal, confidential, restricted
+  retentionDays       Int    @default(2555) // 7 years for PCI compliance
+
+  // Timing
+  timestamp   DateTime @default(now())
+
+  @@index([userId, timestamp])
+  @@index([tenantId, timestamp])
+  @@index([action, timestamp])
+  @@index([resourceId])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// RATE LIMITING
+// ============================================================================
+
+model RateLimit {
+  id          String   @id @default(cuid())
+
+  // Identifier (userId, IP, apiKey, etc.)
+  identifier  String
+  action      String   // Specific action or endpoint
+
+  // Counts
+  count       Int      @default(1)
+  limit       Int
+
+  // Window
+  windowStart DateTime
+  windowEnd   DateTime
+
+  // Metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([identifier, action, windowStart])
+  @@index([identifier, action])
+  @@index([windowEnd])
+  @@map("rate_limits")
+}
+
+// ============================================================================
+// WEBHOOK LOGS
+// ============================================================================
+
+model WebhookLog {
+  id          String   @id @default(cuid())
+
+  // Event
+  eventType   String   // payment.success, checkout.expired, etc.
+  eventId     String   @unique
+
+  // Payload
+  payload     Json
+  signature   String
+
+  // Delivery
+  verified    Boolean  @default(false)
+  processed   Boolean  @default(false)
+  retryCount  Int      @default(0)
+
+  // Processing
+  processedAt DateTime?
+  error       String?
+
+  // Metadata
+  createdAt   DateTime @default(now())
+
+  @@index([eventType, createdAt])
+  @@index([processed])
+  @@map("webhook_logs")
+}
+
+// ============================================================================
+// SYSTEM CONFIGURATION
+// ============================================================================
+
+model SystemConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       Json
+  description String?
+
+  // Metadata
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_config")
+}

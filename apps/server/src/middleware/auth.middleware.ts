@@ -43,8 +43,8 @@ export async function authenticate(
 
     const token = match[1];
 
-    // Try API key first
-    if (token.startsWith('test_sk_') || token.startsWith('live_sk_')) {
+    // Try API key first (support both mcp_sk_ and legacy test_sk_/live_sk_ prefixes)
+    if (token.startsWith('mcp_sk_') || token.startsWith('test_sk_') || token.startsWith('live_sk_')) {
       const authContext = await authService.verifyApiKey(token);
       req.user = {
         id: authContext.userId,

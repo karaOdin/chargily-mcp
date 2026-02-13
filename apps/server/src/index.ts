@@ -17,8 +17,13 @@ async function startServer() {
     // Connect to database
     await connectDatabase();
 
-    // Verify Redis connection
-    await redis.ping();
+    // Verify Redis connection (optional for MVP)
+    try {
+      await redis.ping();
+      logger.info('✅ Redis connected');
+    } catch (error) {
+      logger.warn('⚠️  Redis not available - continuing without Redis (MVP mode)');
+    }
 
     // Start HTTP server
     const server = app.listen(config.port, config.host, () => {

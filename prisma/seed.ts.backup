@@ -1,0 +1,176 @@
+/**
+ * Prisma Database Seed Script
+ * Creates initial data for development and testing
+ */
+
+import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
+import { randomBytes, createHash } from 'crypto';
+
+const prisma = new PrismaClient();
+
+async function main() {
+  console.log('🌱 Starting database seed...');
+
+  // ===== 1. Create Admin User =====
+  console.log('Creating admin user...');
+
+  const adminPassword = await bcrypt.hash('admin123', 10);
+
+  const adminUser = await prisma.user.upsert({
+    where: { email: 'admin@chargily-mcp.local' },
+    update: {},
+    create: {
+      email: 'admin@chargily-mcp.local',
+      name: 'Admin User',
+      password: adminPassword,
+      role: 'admin',
+      tenantId: 'default',
+    },
+  });
+
+  console.log(`✓ Admin user created: ${adminUser.email}`);
+
+  // ===== 2. Create Test User =====
+  console.log('Creating test user...');
+
+  const testPassword = await bcrypt.hash('test123', 10);
+
+  const testUser = await prisma.user.upsert({
+    where: { email: 'test@chargily-mcp.local' },
+    update: {},
+    create: {
+      email: 'test@chargily-mcp.local',
+      name: 'Test User',
+      password: testPassword,
+      role: 'user',
+      tenantId: 'default',
+    },
+  });
+
+  console.log(`✓ Test user created: ${testUser.email}`);
+
+  // ===== 3. Generate API Keys =====
+  console.log('Generating API keys...');
+
+  // Admin API key with all scopes
+  const adminKeyPlain = `test_sk_${randomBytes(32).toString('hex')}`;
+  const adminKeyHash = await bcrypt.hash(adminKeyPlain, 10);
+
+  await prisma.apiKey.upsert({
+    where: { key: adminKeyPlain.substring(0, 16) + '...' },
+    update: {},
+    create: {
+      key: adminKeyPlain.substring(0, 16) + '...',
+      hashedKey: adminKeyHash,
+      name: 'Admin Development Key',
+      userId: adminUser.id,
+      scopes: ['admin'],
+      isActive: true,
+    },
+  });
+
+  console.log(`✓ Admin API Key: ${adminKeyPlain}`);
+  console.log('  (Save this key - it won\'t be shown again!)');
+
+  // Test API key with limited scopes
+  const testKeyPlain = `test_sk_${randomBytes(32).toString('hex')}`;
+  const testKeyHash = await bcrypt.hash(testKeyPlain, 10);
+
+  await prisma.apiKey.upsert({
+    where: { key: testKeyPlain.substring(0, 16) + '...' },
+    update: {},
+    create: {
+      key: testKeyPlain.substring(0, 16) + '...',
+      hashedKey: testKeyHash,
+      name: 'Test Limited Key',
+      userId: testUser.id,
+      scopes: ['balance:read', 'customers:read', 'checkouts:read'],
+      isActive: true,
+    },
+  });
+
+  console.log(`✓ Test API Key: ${testKeyPlain}`);
+
+  // ===== 4. System Configuration =====
+  console.log('Setting up system configuration...');
+
+  await prisma.systemConfig.upsert({
+    where: { key: 'approval_tier1_max' },
+    update: {},
+    create: {
+      key: 'approval_tier1_max',
+      value: '5000', // 50 DZD
+      description: 'Maximum amount for instant approval (Tier 1)',
+    },
+  });
+
+  await prisma.systemConfig.upsert({
+    where: { key: 'approval_tier2_max' },
+    update: {},
+    create: {
+      key: 'approval_tier2_max',
+      value: '100000', // 1,000 DZD
+      description: 'Maximum amount for single approval (Tier 2)',
+    },
+  });
+
+  await prisma.systemConfig.upsert({
+    where: { key: 'approval_tier3_max' },
+    update: {},
+    create: {
+      key: 'approval_tier3_max',
+      value: '999999999', // Unlimited
+      description: 'Maximum amount for dual approval (Tier 3)',
+    },
+  });
+
+  await prisma.systemConfig.upsert({
+    where: { key: 'rate_limit_default' },
+    update: {},
+    create: {
+      key: 'rate_limit_default',
+      value: '100',
+      description: 'Default rate limit (requests per minute)',
+    },
+  });
+
+  console.log('✓ System configuration set');
+
+  // ===== 5. Sample Audit Log =====
+  console.log('Creating sample audit log entry...');
+
+  await prisma.auditLog.create({
+    data: {
+      userId: adminUser.id,
+      tenantId: 'default',
+      action: 'system.seed',
+      resource: 'database',
+      input: JSON.stringify({ operation: 'seed' }),
+      success: true,
+      duration: 0,
+      timestamp: new Date(),
+    },
+  });
+
+  console.log('✓ Sample audit log created');
+
+  // ===== Summary =====
+  console.log('\n✅ Database seeding completed!');
+  console.log('\n📝 Summary:');
+  console.log(`   - Admin user: admin@chargily-mcp.local (password: admin123)`);
+  console.log(`   - Test user: test@chargily-mcp.local (password: test123)`);
+  console.log(`   - Admin API Key: ${adminKeyPlain}`);
+  console.log(`   - Test API Key: ${testKeyPlain}`);
+  console.log('\n⚠️  IMPORTANT: Change these credentials in production!');
+  console.log('   Store API keys securely - they cannot be retrieved later.');
+}
+
+main()
+  .catch((e) => {
+    console.error('❌ Error seeding database:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

@@ -38,7 +38,7 @@
     "@typescript-eslint/parser": "^6.19.0",
     "eslint": "^8.56.0",
     "prettier": "^3.2.4",
-    "prisma": "^7.4.0",
+    "prisma": "5.22.0",
     "tsup": "^8.0.1",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",
@@ -49,8 +49,11 @@
     "pnpm": ">=8.0.0"
   },
   "packageManager": "pnpm@8.15.0",
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "dependencies": {
-    "@prisma/client": "^7.4.0",
+    "@prisma/client": "5.22.0",
     "dotenv": "^17.2.4"
   }
 }

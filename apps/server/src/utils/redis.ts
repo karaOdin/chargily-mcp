@@ -6,13 +6,18 @@ import Redis from 'ioredis';
 import { config } from './config.js';
 import { logger } from './logger.js';
 
-// Create Redis client
-export const redis = new Redis(config.redisUrl, {
+// Create Redis client (with fallback for MVP without Redis)
+export const redis = new Redis(config.redisUrl || 'redis://localhost:6379', {
   retryStrategy: (times) => {
+    // For MVP: give up quickly if Redis is not available
+    if (times > 1) {
+      return null; // Stop retrying
+    }
     const delay = Math.min(times * 50, 2000);
     return delay;
   },
-  maxRetriesPerRequest: 3,
+  maxRetriesPerRequest: 1,
+  lazyConnect: true, // Don't connect immediately
 });
 
 // Event handlers

@@ -1,0 +1,116 @@
+// Chargily MCP Platform - MVP Schema
+// Simplified for SaaS launch - only essential models
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// USER MANAGEMENT (Simplified)
+// ============================================================================
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  password        String   // Hashed with bcrypt
+  name            String?
+
+  // Chargily Integration
+  chargilyApiKey  String?  // Customer's Chargily API key (encrypted)
+  chargilyMode    String   @default("sandbox") // "sandbox" or "production"
+
+  // Relations
+  apiKeys         ApiKey[]
+  auditLogs       AuditLog[]
+
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastLogin       DateTime?
+
+  @@index([email])
+  @@map("users")
+}
+
+// ============================================================================
+// API KEY AUTHENTICATION (For MCP Access)
+// ============================================================================
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  key         String    @unique  // Visible prefix (e.g., "mcp_sk_abc...")
+  hashedKey   String    @unique  // Bcrypt hashed full key
+  name        String?              // Optional label
+
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Status
+  isActive    Boolean   @default(true)
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+
+  // Timestamps
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([hashedKey])
+  @@index([isActive])
+  @@map("api_keys")
+}
+
+// ============================================================================
+// AUDIT LOGGING (Simple)
+// ============================================================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // What happened
+  action      String   // "get_balance", "create_checkout", etc.
+  resource    String?  // "balance", "checkout", "customer", etc.
+  resourceId  String?  // ID of the resource
+
+  // Result
+  success     Boolean
+  error       String?
+
+  // Request metadata
+  ipAddress   String?
+  userAgent   String?
+  duration    Int?     // ms
+
+  // Timestamp
+  timestamp   DateTime @default(now())
+
+  @@index([userId, timestamp])
+  @@index([action, timestamp])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// SYSTEM CONFIGURATION
+// ============================================================================
+
+model SystemConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       Json
+  description String?
+
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_config")
+}

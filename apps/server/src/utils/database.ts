@@ -6,11 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import { logger } from './logger.js';
 
 // Create Prisma client instance
-export const prisma = new PrismaClient({
-  log: process.env.NODE_ENV === 'development'
-    ? ['query', 'info', 'warn', 'error']
-    : ['error'],
-});
+export const prisma = new PrismaClient();
 
 // Connect to database
 export async function connectDatabase(): Promise<void> {

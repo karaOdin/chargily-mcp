@@ -47,10 +47,13 @@ export class AuthService {
       throw new AppError(404, 'User not found', 'user_not_found');
     }
 
-    // Store in database
+    // Store in database with BOTH hashes
+    const lookupHash = apiKeyManager.hashForLookup(plainKey);
+
     const dbApiKey = await apiKeyRepository.create({
       key: apiKey.key,
-      hashedKey: apiKey.hashedKey,
+      lookupHash: lookupHash,  // SHA-256 for fast lookup
+      hashedKey: apiKey.hashedKey,  // bcrypt for verification
       name: apiKey.name,
       user: { connect: { id: params.userId } },
       tenantId: user.tenantId,

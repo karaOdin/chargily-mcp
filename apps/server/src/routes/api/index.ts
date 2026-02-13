@@ -6,6 +6,7 @@ import { Router } from 'express';
 import chargilyRoutes from './chargily.routes.js';
 import authRoutes from './auth.routes.js';
 import webhookRoutes from './webhooks.routes.js';
+import approvalsRoutes from './approvals.routes.js';
 import { authenticate } from '../../middleware/auth.middleware.js';
 
 const router = Router();
@@ -18,6 +19,9 @@ router.use('/webhooks', webhookRoutes);
 
 // Protected Chargily routes
 router.use('/chargily', authenticate, chargilyRoutes);
+
+// Approval workflow routes (protected)
+router.use('/approvals', approvalsRoutes);
 
 // API info
 router.get('/', (_req, res) => {
@@ -59,6 +63,12 @@ router.get('/', (_req, res) => {
         logs: 'GET /api/v1/webhooks/logs',
         stats: 'GET /api/v1/webhooks/stats',
         retry: 'POST /api/v1/webhooks/retry',
+      },
+      approvals: {
+        pending: 'GET /api/v1/approvals/pending',
+        approve: 'POST /api/v1/approvals/:id/approve',
+        reject: 'POST /api/v1/approvals/:id/reject',
+        stats: 'GET /api/v1/approvals/stats',
       },
     },
   });

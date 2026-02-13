@@ -6,6 +6,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { webhookService } from '../../services/webhook.service.js';
 import { AppError } from '../../middleware/error-handler.js';
 import { logger } from '../../utils/logger.js';
+import { webhookRateLimiter } from '../../middleware/rate-limit.js';
 
 const router = Router();
 
@@ -13,7 +14,7 @@ const router = Router();
  * Webhook endpoint - receives events from Chargily
  * POST /api/v1/webhooks/chargily
  */
-router.post('/chargily', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/chargily', webhookRateLimiter.middleware(), async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Get raw body (should be configured in Express)
     const rawBody = JSON.stringify(req.body);

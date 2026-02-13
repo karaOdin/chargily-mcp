@@ -9,9 +9,11 @@ import compression from 'compression';
 import { httpLogger } from './utils/logger.js';
 import { config } from './utils/config.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
+import { apiRateLimiter } from './middleware/rate-limit.js';
 import healthRoutes from './routes/health.js';
 import metricsRoutes from './routes/metrics.js';
 import apiRoutes from './routes/api/index.js';
+import mcpRoutes from './routes/mcp.routes.js';
 
 // Create Express app
 export const app = express();
@@ -39,6 +41,9 @@ app.use(express.urlencoded({ extended: true, limit: process.env.MAX_REQUEST_SIZE
 // HTTP logging
 app.use(httpLogger);
 
+// Rate limiting (global)
+app.use(apiRateLimiter.middleware());
+
 // ============================================================================
 // ROUTES
 // ============================================================================
@@ -52,8 +57,8 @@ app.use(metricsRoutes);
 // API v1 routes
 app.use('/api/v1', apiRoutes);
 
-// MCP endpoint (to be added)
-// app.use('/mcp', mcpRoutes);
+// MCP endpoint
+app.use('/mcp', mcpRoutes);
 
 // Root endpoint
 app.get('/', (_req, res) => {

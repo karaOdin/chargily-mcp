@@ -124,6 +124,33 @@ export class WebhookRepository {
 
     return result.count;
   }
+
+  /**
+   * Get webhook statistics
+   */
+  async getStats() {
+    const [allWebhooks, total, processed, failed] = await Promise.all([
+      prisma.webhookLog.findMany({
+        select: { eventType: true },
+      }),
+      prisma.webhookLog.count(),
+      prisma.webhookLog.count({ where: { processed: true } }),
+      prisma.webhookLog.count({ where: { processed: false } }),
+    ]);
+
+    // Count by event type
+    const byType: Record<string, number> = {};
+    allWebhooks.forEach((webhook) => {
+      byType[webhook.eventType] = (byType[webhook.eventType] || 0) + 1;
+    });
+
+    return {
+      total,
+      processed,
+      failed,
+      byType,
+    };
+  }
 }
 
 export const webhookRepository = new WebhookRepository();

@@ -18,8 +18,8 @@ const ConfigSchema = z.object({
   // Database
   databaseUrl: z.string(),
 
-  // Redis
-  redisUrl: z.string().default('redis://localhost:6379'),
+  // Redis (optional for MVP)
+  redisUrl: z.string().optional().default('redis://localhost:6379'),
 
   // Chargily API
   chargilyMode: z.enum(['sandbox', 'production']).default('sandbox'),
